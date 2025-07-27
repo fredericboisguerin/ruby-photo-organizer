@@ -236,13 +236,8 @@ class PhotoAnalyzer
 
   # Déplacement sécurisé avec gestion des erreurs cross-platform
   def safe_move_file(source, target)
-    # Essayer le déplacement direct d'abord
-    FileUtils.mv(source, target)
-  rescue Errno::EXDEV
-    # Si le déplacement cross-device échoue, copier puis supprimer
-    puts "⚠️  Déplacement cross-device détecté, copie en cours..."
+    # Copie pour éviter erreurs de droits
     FileUtils.cp(source, target)
-    File.delete(source)
   rescue => e
     puts "❌ Erreur lors du déplacement de #{source} vers #{target}: #{e.message}"
     raise
