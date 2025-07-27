@@ -9,6 +9,25 @@ Un organisateur de photos Ruby qui analyse, déduplique et organise vos photos p
 - **Organisation par date** (année/mois/jour) extraite des métadonnées EXIF ou des fichiers
 - **Export CSV** détaillé de l'analyse
 - **Support multi-format** (JPEG, PNG, TIFF, BMP, GIF)
+- **Compatibilité cross-platform** avec les disques formatés Windows
+
+## Compatibilité avec les disques Windows
+
+✅ **Support complet des disques externes Windows** montés sur macOS :
+- Chemins comme `/Volumes/MonDisqueWindows/Photos` sont supportés
+- Nettoyage automatique des caractères interdits (`< > : " | ? *`)
+- Évitement des noms réservés Windows (`CON`, `PRN`, `AUX`, etc.)
+- Gestion intelligente des déplacements cross-device
+- Test d'accessibilité en écriture avant traitement
+
+### Exemples de chemins supportés
+```bash
+# Disque externe Windows
+ruby photo_organizer.rb "/Volumes/DISQUE_PHOTOS" "/Users/john/Photos_Cleaned" "/Users/john/Duplicates"
+
+# Dossier réseau Windows
+ruby photo_organizer.rb "/Volumes/NAS/Photos" "/Users/john/Photos_Organized" "/Users/john/Photos_Duplicates"
+```
 
 ## Installation
 

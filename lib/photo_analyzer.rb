@@ -7,6 +7,10 @@ require 'digest'
 
 class PhotoAnalyzer
   SUPPORTED_EXTENSIONS = %w[.jpg .jpeg .png .tiff .tif .bmp .gif].freeze
+  # Caractères interdits sur Windows dans les noms de fichiers
+  WINDOWS_INVALID_CHARS = /[<>:"|?*]/
+  # Noms de fichiers réservés sur Windows
+  WINDOWS_RESERVED_NAMES = %w[CON PRN AUX NUL COM1 COM2 COM3 COM4 COM5 COM6 COM7 COM8 COM9 LPT1 LPT2 LPT3 LPT4 LPT5 LPT6 LPT7 LPT8 LPT9].freeze
 
   attr_reader :source_path, :unique_path, :duplicate_path, :photos_data, :hash_registry
 
@@ -33,8 +37,17 @@ class PhotoAnalyzer
   def validate_paths
     raise "Le chemin source n'existe pas: #{@source_path}" unless @source_path.exist?
 
+    # Vérifier que les chemins de destination sont accessibles en écriture
     [@unique_path, @duplicate_path].each do |path|
-      FileUtils.mkdir_p(path) unless path.exist?
+      begin
+        FileUtils.mkdir_p(path) unless path.exist?
+        # Test d'écriture pour s'assurer que le disque est accessible
+        test_file = path / '.write_test'
+        File.write(test_file, 'test')
+        File.delete(test_file)
+      rescue => e
+        raise "Impossible d'écrire dans le répertoire: #{path}. Erreur: #{e.message}"
+      end
     end
   end
 
@@ -131,10 +144,12 @@ class PhotoAnalyzer
     target_dir = @unique_path / year / month / day
     FileUtils.mkdir_p(target_dir)
 
-    target_file = target_dir / photo_info[:filename]
+    # Nettoyer le nom de fichier pour la compatibilité Windows
+    clean_filename = sanitize_filename(photo_info[:filename])
+    target_file = target_dir / clean_filename
     target_file = ensure_unique_filename(target_file)
 
-    FileUtils.mv(file_path, target_file)
+    safe_move_file(file_path, target_file)
     puts "✅ Déplacé vers: #{target_file.relative_path_from(@unique_path)}"
   end
 
@@ -142,17 +157,20 @@ class PhotoAnalyzer
     @hash_registry[image_hash][:count] += 1
     increment = @hash_registry[image_hash][:count]
 
-    hash_short = image_hash.to_s[0..7]  # Utiliser les 8 premiers caractères du hash
+    hash_short = image_hash.to_s[0..7]
     target_dir = @duplicate_path / year / month / day / hash_short
     FileUtils.mkdir_p(target_dir)
 
     name_without_ext = File.basename(photo_info[:filename], '.*')
     extension = File.extname(photo_info[:filename])
-    new_filename = "#{name_without_ext}_#{increment}#{extension}"
+
+    # Nettoyer le nom pour la compatibilité Windows
+    clean_name = sanitize_filename(name_without_ext)
+    new_filename = "#{clean_name}_#{increment}#{extension}"
 
     target_file = target_dir / new_filename
 
-    FileUtils.mv(file_path, target_file)
+    safe_move_file(file_path, target_file)
     puts "🔄 Duplicata déplacé vers: #{target_file.relative_path_from(@duplicate_path)}"
   end
 
@@ -190,5 +208,43 @@ class PhotoAnalyzer
     end
 
     puts "📊 Rapport CSV exporté vers: #{csv_path}"
+  end
+
+  # Nettoie les noms de fichiers pour la compatibilité cross-platform
+  def sanitize_filename(filename)
+    # Remplacer les caractères interdits sur Windows
+    clean_name = filename.gsub(WINDOWS_INVALID_CHARS, '_')
+
+    # Éviter les noms réservés Windows
+    name_without_ext = File.basename(clean_name, '.*')
+    if WINDOWS_RESERVED_NAMES.include?(name_without_ext.upcase)
+      extension = File.extname(clean_name)
+      clean_name = "#{name_without_ext}_file#{extension}"
+    end
+
+    # Limiter la longueur (255 caractères max sur la plupart des systèmes)
+    if clean_name.length > 255
+      extension = File.extname(clean_name)
+      name_part = File.basename(clean_name, extension)
+      max_name_length = 255 - extension.length
+      clean_name = "#{name_part[0...max_name_length]}#{extension}"
+    end
+
+    # Supprimer les espaces en début/fin qui peuvent poser problème
+    clean_name.strip
+  end
+
+  # Déplacement sécurisé avec gestion des erreurs cross-platform
+  def safe_move_file(source, target)
+    # Essayer le déplacement direct d'abord
+    FileUtils.mv(source, target)
+  rescue Errno::EXDEV
+    # Si le déplacement cross-device échoue, copier puis supprimer
+    puts "⚠️  Déplacement cross-device détecté, copie en cours..."
+    FileUtils.cp(source, target)
+    File.delete(source)
+  rescue => e
+    puts "❌ Erreur lors du déplacement de #{source} vers #{target}: #{e.message}"
+    raise
   end
 end
