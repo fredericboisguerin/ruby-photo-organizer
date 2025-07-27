@@ -12,13 +12,14 @@ class PhotoAnalyzer
   # Noms de fichiers réservés sur Windows
   WINDOWS_RESERVED_NAMES = %w[CON PRN AUX NUL COM1 COM2 COM3 COM4 COM5 COM6 COM7 COM8 COM9 LPT1 LPT2 LPT3 LPT4 LPT5 LPT6 LPT7 LPT8 LPT9].freeze
 
-  attr_reader :source_path, :unique_path, :duplicate_path, :photos_data, :hash_registry
+  attr_reader :source_path, :unique_path, :duplicate_path, :photos_data, :hash_registry, :other_files_data
 
   def initialize(source_path, unique_path, duplicate_path)
     @source_path = Pathname.new(source_path)
     @unique_path = Pathname.new(unique_path)
     @duplicate_path = Pathname.new(duplicate_path)
     @photos_data = []
+    @other_files_data = []
     @hash_registry = {}
 
     validate_paths
@@ -29,7 +30,9 @@ class PhotoAnalyzer
     puts "🔍 Analyse des photos dans: #{@source_path}"
     scan_photos
     export_to_csv
+    export_other_files_to_csv
     puts "✅ Analyse terminée. #{@photos_data.length} photos traitées."
+    puts "📄 #{@other_files_data.length} autres fichiers répertoriés."
   end
 
   private
@@ -59,9 +62,12 @@ class PhotoAnalyzer
   def scan_photos
     @source_path.find do |file_path|
       next unless file_path.file?
-      next unless supported_image?(file_path)
 
-      process_photo(file_path)
+      if supported_image?(file_path)
+        process_photo(file_path)
+      else
+        process_other_file(file_path)
+      end
     end
   end
 
@@ -210,6 +216,28 @@ class PhotoAnalyzer
     puts "📊 Rapport CSV exporté vers: #{csv_path}"
   end
 
+  def export_other_files_to_csv
+    return if @other_files_data.empty?
+
+    csv_path = @unique_path / 'autres_fichiers.csv'
+
+    CSV.open(csv_path, 'w', headers: true) do |csv|
+      csv << ['chemin_relatif', 'type_fichier', 'nom_fichier', 'date_modification', 'chemin_original']
+
+      @other_files_data.each do |file_info|
+        csv << [
+          file_info[:relative_path],
+          file_info[:file_type],
+          file_info[:filename],
+          file_info[:modification_date].strftime('%Y-%m-%d %H:%M:%S'),
+          file_info[:original_path]
+        ]
+      end
+    end
+
+    puts "📊 Rapport des autres fichiers exporté vers: #{csv_path}"
+  end
+
   # Nettoie les noms de fichiers pour la compatibilité cross-platform
   def sanitize_filename(filename)
     # Remplacer les caractères interdits sur Windows
@@ -241,5 +269,30 @@ class PhotoAnalyzer
   rescue => e
     puts "❌ Erreur lors du déplacement de #{source} vers #{target}: #{e.message}"
     raise
+  end
+
+  def process_other_file(file_path)
+    puts "📄 Fichier non-photo: #{file_path.relative_path_from(@source_path)}"
+
+    file_info = extract_other_file_info(file_path)
+    @other_files_data << file_info
+  rescue => e
+    puts "❌ Erreur lors du traitement de #{file_path}: #{e.message}"
+  end
+
+  def extract_other_file_info(file_path)
+    relative_path = file_path.relative_path_from(@source_path)
+    file_type = file_path.extname.upcase.delete('.')
+    file_type = 'SANS_EXTENSION' if file_type.empty?
+    filename = file_path.basename.to_s
+    modification_date = file_path.mtime
+
+    {
+      relative_path: relative_path.to_s,
+      file_type: file_type,
+      filename: filename,
+      modification_date: modification_date,
+      original_path: file_path.to_s
+    }
   end
 end
