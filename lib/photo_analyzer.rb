@@ -76,7 +76,7 @@ class PhotoAnalyzer
   end
 
   def process_photo(file_path)
-    puts "📸 Traitement: #{file_path.relative_path_from(@source_path)}"
+    #puts "📸 Traitement: #{file_path.relative_path_from(@source_path)}"
 
     photo_info = extract_photo_info(file_path)
     image_hash = calculate_image_hash(file_path)
@@ -272,7 +272,7 @@ class PhotoAnalyzer
   end
 
   def process_other_file(file_path)
-    puts "📄 Fichier non-photo: #{file_path.relative_path_from(@source_path)}"
+    #puts "📄 Fichier non-photo: #{file_path.relative_path_from(@source_path)}"
 
     file_info = extract_other_file_info(file_path)
     @other_files_data << file_info
