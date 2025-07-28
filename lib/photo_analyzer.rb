@@ -149,7 +149,7 @@ class PhotoAnalyzer
         file_size: photo_info[:file_size],
         best_quality_path: file_path.to_s
       }
-      move_unique_photo(file_path, photo_info, year, month, day)
+      move_unique_photo(file_path, photo_info, year, month, day, debug: false)
     end
   end
 
@@ -205,7 +205,7 @@ class PhotoAnalyzer
     puts "🔄 Ancienne version déplacée vers: #{target_file.relative_path_from(@duplicate_path)}"
   end
 
-  def move_unique_photo(file_path, photo_info, year, month, day)
+  def move_unique_photo(file_path, photo_info, year, month, day, debug: true)
     target_dir = @unique_path / year / month / day
     FileUtils.mkdir_p(target_dir)
 
@@ -215,7 +215,7 @@ class PhotoAnalyzer
     target_file = ensure_unique_filename(target_file)
 
     safe_move_file(file_path, target_file)
-    puts "✅ Déplacé vers: #{target_file.relative_path_from(@unique_path)}"
+    puts "✅ Déplacé vers: #{target_file.relative_path_from(@unique_path)}" if debug
   end
 
   def move_duplicate_photo(file_path, photo_info, image_hash, year, month, day, increment)
