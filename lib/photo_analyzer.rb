@@ -94,12 +94,14 @@ class PhotoAnalyzer
     file_type = file_path.extname.upcase.delete('.')
     filename = file_path.basename.to_s
     photo_date = extract_photo_date(file_path)
+    file_size = file_path.size
 
     {
       relative_path: relative_path.to_s,
       file_type: file_type,
       filename: filename,
       photo_date: photo_date,
+      file_size: file_size,
       original_path: file_path.to_s
     }
   end
@@ -137,13 +139,70 @@ class PhotoAnalyzer
     day = format('%02d', photo_date.day)
 
     if @hash_registry.key?(image_hash)
-      # Photo dupliquée
-      move_duplicate_photo(file_path, photo_info, image_hash, year, month, day)
+      # Photo dupliquée détectée - comparer les tailles pour garder la meilleure qualité
+      handle_duplicate_with_quality_check(file_path, photo_info, image_hash, year, month, day)
     else
       # Nouvelle photo unique
-      @hash_registry[image_hash] = { count: 1, original_path: file_path.to_s }
+      @hash_registry[image_hash] = {
+        count: 1,
+        original_path: file_path.to_s,
+        file_size: photo_info[:file_size],
+        best_quality_path: file_path.to_s
+      }
       move_unique_photo(file_path, photo_info, year, month, day)
     end
+  end
+
+  def handle_duplicate_with_quality_check(file_path, photo_info, image_hash, year, month, day)
+    existing_entry = @hash_registry[image_hash]
+    current_size = photo_info[:file_size]
+    existing_size = existing_entry[:file_size]
+
+    @hash_registry[image_hash][:count] += 1
+    increment = @hash_registry[image_hash][:count]
+
+    if current_size > existing_size
+      # La nouvelle photo est de meilleure qualité (plus grande)
+      puts "📈 Meilleure qualité détectée: #{format_file_size(current_size)} vs #{format_file_size(existing_size)}"
+
+      # Déplacer l'ancienne photo (moins bonne qualité) vers les duplicatas
+      move_existing_to_duplicates(existing_entry[:best_quality_path], image_hash, year, month, day, increment - 1)
+
+      # Mettre à jour le registre avec la nouvelle meilleure version
+      @hash_registry[image_hash][:file_size] = current_size
+      @hash_registry[image_hash][:best_quality_path] = file_path.to_s
+
+      # Déplacer la nouvelle photo (meilleure qualité) vers les uniques
+      move_unique_photo(file_path, photo_info, year, month, day)
+    else
+      # La photo existante est de meilleure ou égale qualité
+      if current_size < existing_size
+        puts "📉 Qualité inférieure: #{format_file_size(current_size)} vs #{format_file_size(existing_size)}"
+      else
+        puts "🔄 Même qualité: #{format_file_size(current_size)}"
+      end
+
+      # Déplacer la nouvelle photo (moins bonne qualité) vers les duplicatas
+      move_duplicate_photo(file_path, photo_info, image_hash, year, month, day, increment)
+    end
+  end
+
+  def move_existing_to_duplicates(existing_path, image_hash, year, month, day, increment)
+    existing_file = Pathname.new(existing_path)
+    return unless existing_file.exist?
+
+    hash_short = image_hash.to_s[0..7]
+    target_dir = @duplicate_path / year / month / day / hash_short
+    FileUtils.mkdir_p(target_dir)
+
+    name_without_ext = File.basename(existing_file, '.*')
+    extension = File.extname(existing_file)
+    clean_name = sanitize_filename(name_without_ext)
+    new_filename = "#{clean_name}_#{increment}#{extension}"
+
+    target_file = target_dir / new_filename
+    really_move_file(existing_file, target_file)
+    puts "🔄 Ancienne version déplacée vers: #{target_file.relative_path_from(@duplicate_path)}"
   end
 
   def move_unique_photo(file_path, photo_info, year, month, day)
@@ -159,10 +218,7 @@ class PhotoAnalyzer
     puts "✅ Déplacé vers: #{target_file.relative_path_from(@unique_path)}"
   end
 
-  def move_duplicate_photo(file_path, photo_info, image_hash, year, month, day)
-    @hash_registry[image_hash][:count] += 1
-    increment = @hash_registry[image_hash][:count]
-
+  def move_duplicate_photo(file_path, photo_info, image_hash, year, month, day, increment)
     hash_short = image_hash.to_s[0..7]
     target_dir = @duplicate_path / year / month / day / hash_short
     FileUtils.mkdir_p(target_dir)
@@ -178,6 +234,20 @@ class PhotoAnalyzer
 
     safe_move_file(file_path, target_file)
     puts "🔄 Duplicata déplacé vers: #{target_file.relative_path_from(@duplicate_path)}"
+  end
+
+  # Formate la taille des fichiers de manière lisible
+  def format_file_size(size_bytes)
+    units = ['B', 'KB', 'MB', 'GB']
+    size = size_bytes.to_f
+    unit_index = 0
+
+    while size >= 1024 && unit_index < units.length - 1
+      size /= 1024
+      unit_index += 1
+    end
+
+    "#{size.round(2)} #{units[unit_index]}"
   end
 
   def ensure_unique_filename(target_file)
@@ -199,7 +269,7 @@ class PhotoAnalyzer
     csv_path = @unique_path / 'analyse.csv'
 
     CSV.open(csv_path, 'w', headers: true) do |csv|
-      csv << ['chemin_relatif', 'type_fichier', 'nom_fichier', 'date_photo', 'hash_image', 'chemin_original']
+      csv << ['chemin_relatif', 'type_fichier', 'nom_fichier', 'date_photo', 'taille_fichier', 'hash_image', 'chemin_original']
 
       @photos_data.each do |photo|
         csv << [
@@ -207,6 +277,7 @@ class PhotoAnalyzer
           photo[:file_type],
           photo[:filename],
           photo[:photo_date].strftime('%Y-%m-%d %H:%M:%S'),
+          format_file_size(photo[:file_size]),
           photo[:image_hash],
           photo[:original_path]
         ]
@@ -266,6 +337,15 @@ class PhotoAnalyzer
   def safe_move_file(source, target)
     # Copie pour éviter erreurs de droits
     FileUtils.cp(source, target)
+  rescue => e
+    puts "❌ Erreur lors du déplacement de #{source} vers #{target}: #{e.message}"
+    raise
+  end
+
+  # Déplacement sécurisé avec gestion des erreurs cross-platform
+  def really_move_file(source, target)
+    # Copie pour éviter erreurs de droits
+    FileUtils.mv(source, target)
   rescue => e
     puts "❌ Erreur lors du déplacement de #{source} vers #{target}: #{e.message}"
     raise
