@@ -123,7 +123,7 @@ class PhotoAnalyzer
 
   def calculate_image_hash(file_path)
     # Utiliser dhash-vips pour un hash perceptuel fiable
-    DHashVips::DHash.calculate(file_path.to_s)
+    DHashVips::IDHash.fingerprint(file_path.to_s)
   rescue => e
     puts "⚠️  Impossible de calculer le hash pour #{file_path}: #{e.message}"
     # Fallback sur un hash MD5 du contenu
