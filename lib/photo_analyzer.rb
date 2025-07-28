@@ -178,12 +178,11 @@ class PhotoAnalyzer
       # La photo existante est de meilleure ou égale qualité
       if current_size < existing_size
         puts "📉 Qualité inférieure: #{format_file_size(current_size)} vs #{format_file_size(existing_size)}"
-      else
-        puts "🔄 Même qualité: #{format_file_size(current_size)}"
+        # Déplacer la nouvelle photo (moins bonne qualité) vers les duplicatas
+        move_duplicate_photo(file_path, photo_info, image_hash, year, month, day, increment)
       end
-
-      # Déplacer la nouvelle photo (moins bonne qualité) vers les duplicatas
-      move_duplicate_photo(file_path, photo_info, image_hash, year, month, day, increment)
+      # Sinon, la photo a la même taille, on peut choisir de ne rien faire
+      #puts "🔄 Même qualité: #{format_file_size(current_size)}"
     end
   end
 
